@@ -1,0 +1,11 @@
+.agent/
+docs/
+
+gas-backend/
+.clasp.json
+.clasp.dev.json
+.clasp.prod.json
+.claspignore
+gas-backend-public/
+.vscode/
+node_modules/
