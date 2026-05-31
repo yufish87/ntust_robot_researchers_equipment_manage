@@ -1,5 +1,4 @@
 .agent/
-docs/
 
 gas-backend/
 .clasp.json
