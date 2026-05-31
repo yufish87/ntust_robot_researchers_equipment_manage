@@ -20,6 +20,8 @@ export interface AllocatedEquipment {
 export type EquipmentApplicationStatus =
   | "待審核"
   | "已核准"
+  | "已領取"
+  | "已借出"
   | "已歸還"
   | "不予通過";
 

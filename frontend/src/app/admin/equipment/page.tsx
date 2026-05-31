@@ -49,6 +49,7 @@ function StatusBadge({ status }: { status: string }) {
   const colorMap: Record<string, string> = {
     待審核: "bg-yellow-500 hover:bg-yellow-600",
     已核准: "bg-green-500 hover:bg-green-600",
+    已領取: "bg-blue-500 hover:bg-blue-600",
     已歸還: "bg-slate-500 hover:bg-slate-600",
     不予通過: "bg-red-500 hover:bg-red-600",
   };
@@ -194,7 +195,7 @@ export default function AdminEquipmentPage() {
         case "pending":
           return app.status === "待審核";
         case "active":
-          return app.status === "已核准";
+          return app.status === "已核准" || app.status === "已領取";
         case "history":
           return app.status === "已歸還" || app.status === "不予通過";
         default:
@@ -446,8 +447,8 @@ export default function AdminEquipmentPage() {
                                     </Button>
                                   </>
                                 )}
-                                {/* 已核准（借用中） → 歸還 */}
-                                {app.status === "已核准" && (
+                                {/* 已核准 / 已領取（借用中） → 歸還 */}
+                                {(app.status === "已核准" || app.status === "已領取") && (
                                   <Button
                                     size="sm"
                                     variant="outline"
