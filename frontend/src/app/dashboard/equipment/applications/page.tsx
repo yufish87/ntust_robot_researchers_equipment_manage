@@ -220,7 +220,7 @@ export default function ApplicationsPage() {
           <DialogHeader className="space-y-1.5 text-center">
             <DialogTitle className="text-xl font-bold text-gray-900 tracking-tight flex items-center justify-center gap-2">
               <QrCode className="h-5.5 w-5.5 text-primary shrink-0" />
-              <span>設備借用憑證 QR Code</span>
+              <span>器材領取憑證 QR Code</span>
             </DialogTitle>
             <DialogDescription className="text-sm text-gray-500 max-w-[280px] mx-auto text-center">
               請將此 QRCode 對準鏡頭掃描領取器材
