@@ -36,8 +36,8 @@ const char* ssid = "Fish";
 const char* password = "0910100885";
 
 // BFF API Endpoints
-const char* bffScanUrl = "https://ntust-robotresearchers.vercel.app/api/iot/auth/scan";
-const char* bffConfirmUrl = "https://ntust-robotresearchers.vercel.app/api/iot/auth/confirm";
+const char* bffScanUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/auth/scan";
+const char* bffConfirmUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/auth/confirm";
 const char* iotBearerToken = "YOUR_IOT_BEARER_TOKEN"; // Replace with actual token
 
 // Display and Camera Global Instances
@@ -223,11 +223,10 @@ bool parseBffScanResponse(String jsonStr) {
     return false;
   }
   
-  applicantName = doc["applicantName"].as<String>();
-  scannedReqId = doc["reqId"].as<String>();
+  applicantName = doc["data"]["applicantName"].as<String>();
+  scannedReqId = doc["data"]["reqId"].as<String>();
   
-  JsonArray itemsArr = doc["items"].as<JsonArray>();
-  JsonArray allocArr = doc["allocated"].as<JsonArray>();
+  JsonArray itemsArr = doc["data"]["itemsDetail"].as<JsonArray>();
   
   borrowedItems.clear();
   for (JsonObject item : itemsArr) {
@@ -235,19 +234,7 @@ bool parseBffScanResponse(String jsonStr) {
     bItem.code = item["code"].as<String>();
     bItem.name = item["name"].as<String>();
     bItem.qty = item["qty"].as<int>();
-    
-    // Concat allocated serial codes (e.g. EQDE000146, EQDE000147)
-    bItem.allocatedIds = "";
-    for (JsonObject alloc : allocArr) {
-      if (alloc["code"].as<String>() == bItem.code) {
-        JsonArray items = alloc["items"].as<JsonArray>();
-        for (size_t i = 0; i < items.size(); i++) {
-          if (i > 0) bItem.allocatedIds += ", ";
-          bItem.allocatedIds += items[i].as<String>();
-        }
-        break;
-      }
-    }
+    bItem.allocatedIds = ""; // allocated serial codes are not provided in the IoT endpoint
     borrowedItems.push_back(bItem);
   }
   return true;
@@ -264,6 +251,7 @@ String sendScanRequest(String reqId) {
   
   HTTPClient http;
   http.begin(client, bffScanUrl);
+  http.setTimeout(30000); // 30 seconds timeout for GAS response
   http.addHeader("Content-Type", "application/json");
   
   String tokenHeader = "Bearer " + String(iotBearerToken);
@@ -296,6 +284,7 @@ bool sendConfirmRequest(String reqId) {
   
   HTTPClient http;
   http.begin(client, bffConfirmUrl);
+  http.setTimeout(30000); // 30 seconds timeout for GAS write transactions
   http.addHeader("Content-Type", "application/json");
   
   String tokenHeader = "Bearer " + String(iotBearerToken);

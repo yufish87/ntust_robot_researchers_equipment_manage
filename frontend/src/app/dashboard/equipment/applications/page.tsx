@@ -231,11 +231,11 @@ export default function ApplicationsPage() {
 
           <div className="flex flex-col items-center justify-center py-6">
             {selectedAppId && (
-              <div className="relative group flex flex-col items-center justify-center p-6 bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-gray-100/80 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.08)]">
-                <div className="w-[75vw] h-[75vw] max-w-[240px] max-h-[240px] bg-white flex items-center justify-center rounded-xl overflow-hidden">
+              <div className="relative group flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] border border-gray-100/60 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)]">
+                <div className="w-[80vw] h-[80vw] max-w-[300px] max-h-[300px] bg-white flex items-center justify-center rounded-xl overflow-hidden">
                   <QRCodeSVG
                     value={selectedAppId}
-                    size={240}
+                    size={300}
                     level="M"
                     includeMargin={true}
                     className="w-full h-full"
