@@ -32,13 +32,13 @@ int remainingSeconds = 180; // 3-minute timeout for equipment pickup
 #define BUZZER_PIN 2
 
 // WiFi Credentials
-const char* ssid = "Fish";
-const char* password = "0910100885";
+const char* ssid = "yufish";
+const char* password = "yufish666";
 
 // BFF API Endpoints
 const char* bffScanUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/auth/scan";
 const char* bffConfirmUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/auth/confirm";
-const char* iotBearerToken = "YOUR_IOT_BEARER_TOKEN"; // Replace with actual token
+const char* iotBearerToken = "RRC_IoT_Secure_Token_2026"; // Replace with actual token
 
 // Display and Camera Global Instances
 TFT_eSPI tft = TFT_eSPI();

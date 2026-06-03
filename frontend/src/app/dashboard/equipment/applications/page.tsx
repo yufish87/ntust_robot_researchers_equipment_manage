@@ -216,7 +216,7 @@ export default function ApplicationsPage() {
       )}
 
       <Dialog open={!!selectedAppId} onOpenChange={(open) => !open && setSelectedAppId(null)}>
-        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-xl border border-gray-100 bg-white p-6 shadow-2xl transition-all duration-300">
+        <DialogContent className="sm:max-w-md max-w-[calc(100%-2rem)] rounded-xl border border-gray-100 bg-white p-4 sm:p-6 shadow-2xl transition-all duration-300">
           <DialogHeader className="space-y-1.5 text-center">
             <DialogTitle className="text-xl font-bold text-gray-900 tracking-tight flex items-center justify-center gap-2">
               <QrCode className="h-5.5 w-5.5 text-primary shrink-0" />
@@ -229,10 +229,10 @@ export default function ApplicationsPage() {
             </DialogDescription>
           </DialogHeader>
 
-          <div className="flex flex-col items-center justify-center py-6">
+          <div className="flex flex-col items-center justify-center py-4">
             {selectedAppId && (
-              <div className="relative group flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] border border-gray-100/60 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)]">
-                <div className="w-[80vw] h-[80vw] max-w-[300px] max-h-[300px] bg-white flex items-center justify-center rounded-xl overflow-hidden">
+              <div className="w-full max-w-[320px] relative group flex flex-col items-center justify-center p-3 bg-white rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.02)] border border-gray-100/60 transition-all duration-300 hover:shadow-[0_8px_30px_rgb(0,0,0,0.06)]">
+                <div className="w-full aspect-square bg-white flex items-center justify-center rounded-xl overflow-hidden">
                   <QRCodeSVG
                     value={selectedAppId}
                     size={300}
