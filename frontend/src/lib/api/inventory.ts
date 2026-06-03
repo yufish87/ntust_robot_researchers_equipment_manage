@@ -81,4 +81,28 @@ export const InventoryAPI = {
     });
     return res.data;
   },
+
+  /** 取得即時櫃位箱子狀態 */
+  getCabinetStatus: async (): Promise<{
+    success: boolean;
+    data: {
+      layouts: Array<{
+        slotId: string;
+        deviceId: string;
+        position: string;
+        ledPin: string;
+        description: string;
+      }>;
+      boxes: Array<{
+        boxId: string;
+        size: string;
+        categories: string[];
+        location: string;
+        status: string;
+      }>;
+    };
+  }> => {
+    const res = await api.get("/iot/cabinet/status");
+    return res.data;
+  },
 };

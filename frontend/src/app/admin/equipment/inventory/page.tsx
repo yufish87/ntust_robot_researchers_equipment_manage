@@ -42,6 +42,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FileUpload, type FileUploadRef } from "@/components/ui/file-upload";
+import Link from "next/link";
 import {
   Loader2,
   RefreshCw,
@@ -54,6 +55,7 @@ import {
   Trash2,
   HelpCircle,
   PlusCircle,
+  LayoutGrid,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { getGoogleDriveImageUrl } from "@/lib/utils";
@@ -500,6 +502,15 @@ export default function InventoryPage() {
           </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+          <Link href="/admin/equipment/inventory/cabinet-status" passHref>
+            <Button
+              variant="outline"
+              className="w-full sm:w-auto text-primary border-primary/20 hover:bg-primary/5"
+            >
+              <LayoutGrid className="mr-2 h-4 w-4" />
+              查看箱子位置
+            </Button>
+          </Link>
           <Button
             className="w-full sm:w-auto"
             onClick={() => {
