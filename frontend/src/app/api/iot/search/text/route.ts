@@ -80,18 +80,13 @@ interface KeywordSearchResult {
 // ── Groq NLU ────────────────────────────────────────────────────────────
 async function extractKeywords(query: string): Promise<string[]> {
   const prompt = `
-你是一個實驗室器材管理系統的 NLU 模組。
+你是一個社團器材管理系統的 NLU 模組。
 器材庫存清單：${EQUIPMENT_LIST.join("、")}
 
 使用者輸入：「${query}」
 
 請從上方器材庫存清單中，找出使用者想尋找的器材名稱（可以多個）。
-規則：
-- 若使用者說的名稱與列表有些許差異（語音辨識誤字、別名、簡稱），請自動對應到列表中最接近的名稱
-- 若無法對應到列表中任何器材，回傳空陣列
-- 所有輸出的器材名稱必須使用繁體中文
-
-請只輸出 JSON 物件，格式如下（不要 markdown 圍欄）：
+請只輸出 JSON 物件，格式如下：
 {
   "keywords": ["Arduino Uno (附線)", "超音波傳感器"]
 }
