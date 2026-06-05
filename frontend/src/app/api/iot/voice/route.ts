@@ -157,9 +157,12 @@ async function publishLedCommands(
   });
 }
 
-/** TTS: Edge TTS 主要方案 → OpenAI fallback */
+/**
+ * TTS 主要方案: Edge TTS (MP3) → Google Translate TTS fallback
+ * 回傳 base64 MP3，用於 POST /api/iot/voice 的 audioBase64 欄位
+ */
 async function generateTtsBase64(text: string): Promise<string> {
-  // 1. 嘗試 Edge TTS (語音最自然)
+  // 1. Edge TTS
   try {
     const buf = await tts(text, { voice: "zh-TW-HsiaoChenNeural" });
     return buf.toString("base64");
@@ -167,20 +170,14 @@ async function generateTtsBase64(text: string): Promise<string> {
     console.warn("Edge TTS failed, trying Google TTS:", e);
   }
 
-  // 2. 嘗試 Google Translate TTS (免費、免 Key、Vercel 雲端 IP 友善)
+  // 2. Google Translate TTS (Vercel 雲端備用)
   try {
-    const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-TW&client=tw-ob`;
-    const res = await fetch(googleTtsUrl, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36"
-      }
+    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-TW&client=tw-ob`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" },
     });
-    if (res.ok) {
-      const arrayBuffer = await res.arrayBuffer();
-      return Buffer.from(arrayBuffer).toString("base64");
-    } else {
-      console.warn("Google TTS failed with status:", res.status);
-    }
+    if (res.ok) return Buffer.from(await res.arrayBuffer()).toString("base64");
+    console.warn("Google TTS status:", res.status);
   } catch (e) {
     console.warn("Google TTS failed:", e);
   }
@@ -438,13 +435,24 @@ export async function POST(req: NextRequest) {
 /**
  * GET /api/iot/voice/tts
  *
- * 參數: ?text=xxx
- * 回傳: audio/mpeg 串流或音訊二進位資料，供 NodeMCU-32S 串流播放
+ * 參數:
+ *   ?text=xxx          必填，要合成的文字
+ *   &format=pcm        回傳 raw 24kHz/16-bit/mono PCM (供 NodeMCU A2DP 直接導入)
+ *   &format=wav        回傳 WAV 檔 (RIFF header + PCM)
+ *   &format=mp3        預設，回傳 MP3
+ *
+ * ESP32-A2DP 建議使用 format=pcm：
+ *   - 資料率: 24000 Hz
+ *   - 聲道: 1 (mono)
+ *   - 位元深度: 16-bit signed PCM
+ *   - NodeMCU 經 HTTP chunked streaming 接收後，直接送進 A2DP callback
  */
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const text = searchParams.get("text");
+    const format = (searchParams.get("format") ?? "mp3").toLowerCase();
+
     if (!text) {
       return NextResponse.json(
         { success: false, error: "Missing text parameter" },
@@ -452,7 +460,45 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    // 1. 嘗試 Edge TTS (語音最自然)
+    // ── PCM / WAV 格式: Edge TTS 直接輸出原始 PCM 或 WAV ──
+    // Edge TTS 支援的格式:
+    //   raw-24khz-16bit-mono-pcm  → 純 PCM byte stream
+    //   riff-24khz-16bit-mono-pcm → WAV 檔 (RIFF header + PCM)
+    if (format === "pcm" || format === "wav") {
+      const outputFormat =
+        format === "pcm"
+          ? "raw-24khz-16bit-mono-pcm"
+          : "riff-24khz-16bit-mono-pcm";
+      const contentType =
+        format === "pcm" ? "audio/L16;rate=24000;channels=1" : "audio/wav";
+
+      try {
+        const buf = await tts(text, {
+          voice: "zh-TW-HsiaoChenNeural",
+          // @ts-expect-error edge-tts 套件型別宣告未完全涉及 outputFormat
+          outputFormat,
+        });
+        const uint8Array = new Uint8Array(buf);
+        return new NextResponse(uint8Array, {
+          headers: {
+            "Content-Type": contentType,
+            "Content-Length": uint8Array.byteLength.toString(),
+            // 讓 NodeMCU 知道哪處開始撷 WAV header
+            "X-Audio-SampleRate": "24000",
+            "X-Audio-Channels": "1",
+            "X-Audio-BitDepth": "16",
+          },
+        });
+      } catch (e) {
+        console.warn("[Voice GET] Edge TTS PCM failed:", e);
+        return NextResponse.json(
+          { success: false, error: "Edge TTS PCM failed, only Edge TTS supports raw PCM" },
+          { status: 502 },
+        );
+      }
+    }
+
+    // ── MP3 格式: Edge TTS → Google TTS fallback ──
     try {
       const buf = await tts(text, { voice: "zh-TW-HsiaoChenNeural" });
       const uint8Array = new Uint8Array(buf);
@@ -466,7 +512,6 @@ export async function GET(req: NextRequest) {
       console.warn("[Voice GET] Edge TTS failed, trying Google TTS:", e);
     }
 
-    // 2. 嘗試 Google Translate TTS (免費、免 Key、雲端友好)
     try {
       const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-TW&client=tw-ob`;
       const res = await fetch(googleTtsUrl, {
@@ -485,31 +530,6 @@ export async function GET(req: NextRequest) {
       }
     } catch (e) {
       console.warn("[Voice GET] Google TTS failed:", e);
-    }
-
-    // 3. 嘗試 OpenAI TTS (需要 Key)
-    if (process.env.OPENAI_API_KEY) {
-      try {
-        const res = await fetch("https://api.openai.com/v1/audio/speech", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
-        });
-        if (res.ok) {
-          const arrayBuffer = await res.arrayBuffer();
-          return new NextResponse(arrayBuffer, {
-            headers: {
-              "Content-Type": "audio/mpeg",
-              "Content-Length": arrayBuffer.byteLength.toString(),
-            },
-          });
-        }
-      } catch (e) {
-        console.warn("[Voice GET] OpenAI TTS failed:", e);
-      }
     }
 
     return NextResponse.json(

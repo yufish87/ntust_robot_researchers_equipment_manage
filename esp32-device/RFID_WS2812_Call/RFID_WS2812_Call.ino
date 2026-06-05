@@ -9,15 +9,15 @@
  *
  * 腳位（ESP32-S3-WROOM）：
  *   RC522 SCK  -> GPIO 18
- *   RC522 MISO -> GPIO 13
+ *   RC522 MISO -> GPIO 13  (三個模組共用)
  *   RC522 MOSI -> GPIO 11
- *   RC522 RST  -> GPIO 12
+ *   RC522 RST  -> GPIO 12  (三個模組共用，開機一次 hard reset)
  *   RC522 A CS -> GPIO 5
  *   RC522 B CS -> GPIO 16
  *   RC522 C CS -> GPIO 17
- *   LED A DIN  -> GPIO 21
- *   LED B DIN  -> GPIO 9
- *   LED C DIN  -> GPIO 10
+ *   LED A DIN  -> GPIO 9
+ *   LED B DIN  -> GPIO 10
+ *   LED C DIN  -> GPIO 21
  *
  * Arduino IDE Library Manager 需安裝：
  *   MFRC522
@@ -35,7 +35,7 @@
 // 1. 函式庫
 // ============================================================================
 #include <SPI.h>
-#define MFRC522_SPICLOCK (1000000u)  // 降到 1 MHz，麵包板多模組並聯時訊號穩定
+#define MFRC522_SPICLOCK (500000u)   // 500 kHz，驗證可正常運作的穩定頻率
 #include <MFRC522.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
@@ -71,26 +71,22 @@ const char* DEVICE_ID     = "ESP32_C1_L1";
 // ============================================================================
 // 4. 腳位定義
 // ============================================================================
-#define SPI_SCK_PIN     18
-#define SPI_MOSI_PIN    11
+#define SPI_SCK_PIN      18
+#define SPI_MISO_PIN     13
+#define SPI_MOSI_PIN     11
 
-#define RC522_A_RST_PIN 12  // 左側 GPIO12
-#define RC522_B_RST_PIN  7  // 左側 GPIO7 (獨立 RST 避免干涉)
-#define RC522_C_RST_PIN 15  // 左側 GPIO15 (獨立 RST 避免干涉)
+// 三個 RC522 共用同一 RST：開機做一次集體 hard reset，
+// 之後 MFRC522 constructor 用 UINT8_MAX 走 soft reset，不再碰 RST 腳。
+#define RC522_RST_PIN    12
 
-#define RC522_A_CS_PIN   5
-#define RC522_B_CS_PIN   4  // 改用左側 GPIO4 (避開 JTAG/PSRAM/Strap 衝突)
-#define RC522_C_CS_PIN   6  // 改用左側 GPIO6 (避開 JTAG/PSRAM/Strap 衝突)
+#define RC522_A_CS_PIN    5
+#define RC522_B_CS_PIN   16
+#define RC522_C_CS_PIN   17
 
-// 三個 RC522 獨立使用 MISO 腳位，解決 cheap 模組 MISO 不釋放的硬體 bug (Tri-state issue)
-#define RC522_A_MISO_PIN 13  // 左側 GPIO13
-#define RC522_B_MISO_PIN 14  // 左側下方 GPIO14
-#define RC522_C_MISO_PIN  8  // 左側中間 GPIO8
-
-// S3 無 GPIO25/27，改用 GPIO9/GPIO10/GPIO21
-#define LED_A_PIN       21
-#define LED_B_PIN        9
-#define LED_C_PIN       10
+// LED 腳位（與 Example 驗證版一致）
+#define LED_A_PIN         9
+#define LED_B_PIN        10
+#define LED_C_PIN        21
 
 // ============================================================================
 // 5. LED 設定
@@ -123,9 +119,9 @@ struct UidEntry {
 };
 
 UidEntry UID_TABLE[] = {
-    {{0x23, 0xF3, 0x9D, 0xA5}, 4, "BOX-001"},
-    {{0xD3, 0xC4, 0x4B, 0x00}, 4, "BOX-002"},
-    {{0x55, 0x66, 0x77, 0x88}, 4, "BOX-003"},
+    {{0x17, 0xBE, 0xF5, 0xD7}, 4, "BOX-001"},
+    {{0x5B, 0xDB, 0x12, 0x07}, 4, "BOX-002"},
+    {{0x23, 0x44, 0x17, 0x0D}, 4, "BOX-003"},
 };
 const int UID_TABLE_SIZE = sizeof(UID_TABLE) / sizeof(UidEntry);
 
@@ -134,12 +130,15 @@ const int UID_TABLE_SIZE = sizeof(UID_TABLE) / sizeof(UidEntry);
 // ============================================================================
 #define SLOT_COUNT 3
 
-MFRC522 rfidA(RC522_A_CS_PIN, RC522_A_RST_PIN);
-MFRC522 rfidB(RC522_B_CS_PIN, RC522_B_RST_PIN);
-MFRC522 rfidC(RC522_C_CS_PIN, RC522_C_RST_PIN);
+// UINT8_MAX = MFRC522 library 的 UNUSED_PIN，讓 PCD_Init() 走 soft reset，
+// 不碰實體 RST 腳，避免初始化時三個模組互相干擾。
+MFRC522 rfidA(RC522_A_CS_PIN, UINT8_MAX);
+MFRC522 rfidB(RC522_B_CS_PIN, UINT8_MAX);
+MFRC522 rfidC(RC522_C_CS_PIN, UINT8_MAX);
 
-MFRC522*    READERS[SLOT_COUNT]    = {&rfidA, &rfidB, &rfidC};
-const char* SLOT_NAMES[SLOT_COUNT] = {"A", "B", "C"};
+MFRC522*      READERS[SLOT_COUNT]    = {&rfidA, &rfidB, &rfidC};
+const char*   SLOT_NAMES[SLOT_COUNT] = {"A", "B", "C"};
+const uint8_t CS_PINS[SLOT_COUNT]    = {RC522_A_CS_PIN, RC522_B_CS_PIN, RC522_C_CS_PIN};
 
 CRGB ledsA[NUM_LEDS];
 CRGB ledsB[NUM_LEDS];
@@ -186,19 +185,14 @@ void   runScanMode();
 void   printStateTable();
 
 // ============================================================================
-// 9.5. SPI MISO 動態切換
+// 9.5. SPI CS 全部取消選取（共用 MISO 模式必備）
 // ============================================================================
-void selectReaderMiso(int idx) {
-    SPI.end();
-    delayMicroseconds(10);
-    if (idx == 0) {
-        SPI.begin(SPI_SCK_PIN, RC522_A_MISO_PIN, SPI_MOSI_PIN, -1);
-    } else if (idx == 1) {
-        SPI.begin(SPI_SCK_PIN, RC522_B_MISO_PIN, SPI_MOSI_PIN, -1);
-    } else if (idx == 2) {
-        SPI.begin(SPI_SCK_PIN, RC522_C_MISO_PIN, SPI_MOSI_PIN, -1);
+void deselectAllReaders() {
+    // 共用 SPI 時，任何時間都應只讓一個 RC522 的 CS 為 LOW。
+    // 這個函式先把全部 CS 拉 HIGH，交給 MFRC522 library 在交易時控制自己的 CS。
+    for (int i = 0; i < SLOT_COUNT; i++) {
+        digitalWrite(CS_PINS[i], HIGH);
     }
-    delayMicroseconds(50); // 給予矩陣切換穩定的極短時間
 }
 
 // ============================================================================
@@ -213,32 +207,37 @@ void setup() {
     Serial.println(F("========================================\n"));
 
     // CS 腳位在 SPI.begin() 之前先拉高，避免 floating CS 干擾 bus
-    pinMode(RC522_A_CS_PIN, OUTPUT); digitalWrite(RC522_A_CS_PIN, HIGH);
-    pinMode(RC522_B_CS_PIN, OUTPUT); digitalWrite(RC522_B_CS_PIN, HIGH);
-    pinMode(RC522_C_CS_PIN, OUTPUT); digitalWrite(RC522_C_CS_PIN, HIGH);
-
-    // 獨立 RST 腳位預設拉低，避免未啟動模組對匯流排造成電氣干擾
-    pinMode(RC522_A_RST_PIN, OUTPUT); digitalWrite(RC522_A_RST_PIN, LOW);
-    pinMode(RC522_B_RST_PIN, OUTPUT); digitalWrite(RC522_B_RST_PIN, LOW);
-    pinMode(RC522_C_RST_PIN, OUTPUT); digitalWrite(RC522_C_RST_PIN, LOW);
-
-    // 預初始化所有 MISO 腳位為帶上拉輸入，避免浮空
-    pinMode(RC522_A_MISO_PIN, INPUT_PULLUP);
-    pinMode(RC522_B_MISO_PIN, INPUT_PULLUP);
-    pinMode(RC522_C_MISO_PIN, INPUT_PULLUP);
-
-    Serial.println(F("[SPI] GPIO18(SCK)/11(MOSI) initialized with dynamic MISO"));
-
     for (int i = 0; i < SLOT_COUNT; i++) {
-        selectReaderMiso(i);
+        pinMode(CS_PINS[i], OUTPUT);
+        digitalWrite(CS_PINS[i], HIGH);
+    }
+
+    // 三個模組共用 RST：先做一次集體 hard reset，讓所有模組同時離開 reset 狀態。
+    // 之後 PCD_Init() 走 soft reset（UINT8_MAX），不再碰 RST 腳，
+    // 避免初始化 B 時把 A reset 掉、初始化 C 時把 A/B reset 掉的問題。
+    pinMode(RC522_RST_PIN, OUTPUT);
+    digitalWrite(RC522_RST_PIN, LOW);
+    delay(10);
+    digitalWrite(RC522_RST_PIN, HIGH);
+    delay(50);  // MFRC522 datasheet: 上電後需要 ≥37ms 才能正常回應
+
+    // 只初始化一次 SPI bus（共用 MISO=13）
+    SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, -1);
+    Serial.println(F("[SPI] SCK=18 MISO=13 MOSI=11 CS=A5/B16/C17 RST=12"));
+
+    // 逐一初始化三個 RC522，並讀 VersionReg 確認模組有正確回應
+    for (int i = 0; i < SLOT_COUNT; i++) {
+        deselectAllReaders();
         READERS[i]->PCD_Init();
+        delay(100);  // soft reset 後多等一些，確保 SPI 穩定
         byte ver = READERS[i]->PCD_ReadRegister(MFRC522::VersionReg);
         Serial.printf("[RC522 %s] Version: 0x%02X", SLOT_NAMES[i], ver);
         if (ver == 0x00 || ver == 0xFF) {
-            Serial.print(F("  <-- check wiring, power, RST, or CS pin"));
+            Serial.print(F("  <-- check CS/RST/SPI wiring or 3.3V power"));
         }
         Serial.println();
     }
+    deselectAllReaders();
 
     FastLED.addLeds<LED_TYPE, LED_A_PIN, CLR_ORDER>(ledsA, NUM_LEDS)
            .setCorrection(TypicalLEDStrip);
@@ -248,7 +247,7 @@ void setup() {
            .setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(BRIGHTNESS);
     FastLED.clear(true);
-    Serial.println(F("[LED] GPIO21/9/10 WS2812B initialized"));
+    Serial.println(F("[LED] GPIO9/10/21 WS2812B initialized"));
 
     for (int i = 0; i < NUM_LEDS; i++) {
         for (int s = 0; s < SLOT_COUNT; s++) STRIPS[s][i] = CRGB::Blue;
@@ -491,7 +490,7 @@ int pinToStripIndex(int gpioPin) {
 // 16. RFID 輪詢
 // ============================================================================
 String pollSlot(int idx) {
-    selectReaderMiso(idx);
+    deselectAllReaders();
     MFRC522& reader = *READERS[idx];
 
     byte atqa[2];
@@ -672,7 +671,7 @@ void runScanMode() {
     lastMs = millis();
 
     for (int i = 0; i < SLOT_COUNT; i++) {
-        selectReaderMiso(i);
+        deselectAllReaders();
         MFRC522& r = *READERS[i];
         byte atqa[2];
         byte sz = 2;
