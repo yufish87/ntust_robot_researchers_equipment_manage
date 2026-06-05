@@ -51,7 +51,7 @@
 // 1. 函式庫
 // ============================================================================
 #include <SPI.h>
-#define MFRC522_SPICLOCK (1000000u)  // 降到 1 MHz，麵包板多模組並聯時訊號穩定
+#define MFRC522_SPICLOCK (500000u)  // 降到 1 MHz，麵包板多模組並聯時訊號穩定
 #include <MFRC522.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -79,22 +79,28 @@ const char* DEVICE_ID     = "ESP32_C1_L1";
 // 3. 腳位定義
 // ============================================================================
 // ESP32-S3 SPI 腳位（非預設，手動指定）。
-// S3 無 GPIO22/23，MISO 改用 GPIO13 避開 USB_D+(GPIO19)。
+// S3 無 GPIO22/23，MOSI 改用 GPIO11。
 #define SPI_SCK_PIN     18
-#define SPI_MISO_PIN    13
 #define SPI_MOSI_PIN    11
 
-// 三個 RC522 共用同一個 RST 腳位。
-#define RC522_RST_PIN   12
+// 三個 RC522 獨立使用 RST 腳位。
+#define RC522_A_RST_PIN 12  // 左側 GPIO12
+#define RC522_B_RST_PIN  7  // 左側 GPIO7 (獨立 RST 避免干涉)
+#define RC522_C_RST_PIN 15  // 左側 GPIO15 (獨立 RST 避免干涉)
 
 // 三個 RC522 各自使用不同 CS/SDA 腳位。
-// 注意：RC522 模組上常標 SDA，但在 SPI 模式下它其實是 CS/SS。
+// 避免使用 GPIO16/17 (與 ESP32-S3 WROOM-1 N16R8 的 PSRAM 腳位衝突)
 #define RC522_A_CS_PIN   5
-#define RC522_B_CS_PIN  16
-#define RC522_C_CS_PIN  17
+#define RC522_B_CS_PIN   4  // 改用左側 GPIO4 (避開 JTAG/PSRAM/Strap 衝突)
+#define RC522_C_CS_PIN   6  // 改用左側 GPIO6 (避開 JTAG/PSRAM/Strap 衝突)
+
+// 三個 RC522 獨立使用 MISO 腳位，解決 cheap 模組 MISO 不釋放的硬體 bug (Tri-state issue)
+#define RC522_A_MISO_PIN 13  // 左側 GPIO13
+#define RC522_B_MISO_PIN 14  // 左側下方 GPIO14
+#define RC522_C_MISO_PIN  8  // 左側中間 GPIO8
 
 // 三條 LED 燈條的資料輸入腳位。
-// S3 無 GPIO25/27，改用 GPIO9/GPIO10。
+// S3 無 GPIO25/27，改用 GPIO9/GPIO10/GPIO21。
 #define LED_A_PIN        9
 #define LED_B_PIN       10
 #define LED_C_PIN       21
@@ -151,9 +157,9 @@ struct UidEntry {
 
 UidEntry UID_TABLE[] = {
     // uid bytes                         長度  箱子 ID
-    {{0x23, 0xF3, 0x9D, 0xA5},            4,   "BOX-001"},
-    {{0xD3, 0xC4, 0x4B, 0x00},            4,   "BOX-002"},
-    {{0x55, 0x66, 0x77, 0x88},            4,   "BOX-003"},
+    {{0x17, 0xBE, 0xF5, 0xD7},            4,   "BOX-001"},
+    {{0x5B, 0xDB, 0x12, 0x07},            4,   "BOX-002"},
+    {{0x23, 0x44, 0x17, 0x0D},            4,   "BOX-003"},
 };
 const int UID_TABLE_SIZE = sizeof(UID_TABLE) / sizeof(UidEntry);
 
@@ -164,9 +170,9 @@ const int UID_TABLE_SIZE = sizeof(UID_TABLE) / sizeof(UidEntry);
 
 // 建立三個 RC522 讀卡機物件。
 // MFRC522 建構子參數為：CS pin, RST pin。
-MFRC522 rfidA(RC522_A_CS_PIN, RC522_RST_PIN);
-MFRC522 rfidB(RC522_B_CS_PIN, RC522_RST_PIN);
-MFRC522 rfidC(RC522_C_CS_PIN, RC522_RST_PIN);
+MFRC522 rfidA(RC522_A_CS_PIN, RC522_A_RST_PIN);
+MFRC522 rfidB(RC522_B_CS_PIN, RC522_B_RST_PIN);
+MFRC522 rfidC(RC522_C_CS_PIN, RC522_C_RST_PIN);
 
 // 用陣列管理三個 reader，後續可用 for loop 統一處理 A/B/C。
 MFRC522*    READERS[SLOT_COUNT]    = {&rfidA, &rfidB, &rfidC};
@@ -215,6 +221,22 @@ void   runScanMode();
 void   printStateTable();
 
 // ============================================================================
+// 8.5. SPI MISO 動態切換
+// ============================================================================
+void selectReaderMiso(int idx) {
+    SPI.end();
+    delayMicroseconds(10);
+    if (idx == 0) {
+        SPI.begin(SPI_SCK_PIN, RC522_A_MISO_PIN, SPI_MOSI_PIN, -1);
+    } else if (idx == 1) {
+        SPI.begin(SPI_SCK_PIN, RC522_B_MISO_PIN, SPI_MOSI_PIN, -1);
+    } else if (idx == 2) {
+        SPI.begin(SPI_SCK_PIN, RC522_C_MISO_PIN, SPI_MOSI_PIN, -1);
+    }
+    delayMicroseconds(50); // 給予矩陣切換穩定的極短時間
+}
+
+// ============================================================================
 // 9. setup()
 // ============================================================================
 void setup() {
@@ -227,20 +249,25 @@ void setup() {
 
     // 初始化 SPI bus。
     // 在 SPI.begin() 之前先把所有 CS 腳位拉高，避免 floating CS 干擾 bus。
-    // ESP32-S3 boot 時 GPIO 預設為 input floating，若 CS 為 LOW 會拉住整條 SPI。
     pinMode(RC522_A_CS_PIN, OUTPUT); digitalWrite(RC522_A_CS_PIN, HIGH);
     pinMode(RC522_B_CS_PIN, OUTPUT); digitalWrite(RC522_B_CS_PIN, HIGH);
     pinMode(RC522_C_CS_PIN, OUTPUT); digitalWrite(RC522_C_CS_PIN, HIGH);
 
-    // 三個 RC522 共用同一組 SPI 訊號線，只靠各自的 CS 腳位區分。
-    SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, -1);
-    Serial.println(F("[SPI] GPIO18(SCK)/13(MISO)/11(MOSI) initialized"));
+    // 獨立 RST 腳位預設拉低，避免未啟動模組對匯流排造成電氣干擾
+    pinMode(RC522_A_RST_PIN, OUTPUT); digitalWrite(RC522_A_RST_PIN, LOW);
+    pinMode(RC522_B_RST_PIN, OUTPUT); digitalWrite(RC522_B_RST_PIN, LOW);
+    pinMode(RC522_C_RST_PIN, OUTPUT); digitalWrite(RC522_C_RST_PIN, LOW);
+
+    // 預初始化所有 MISO 腳位為帶上拉輸入，避免浮空
+    pinMode(RC522_A_MISO_PIN, INPUT_PULLUP);
+    pinMode(RC522_B_MISO_PIN, INPUT_PULLUP);
+    pinMode(RC522_C_MISO_PIN, INPUT_PULLUP);
+
+    Serial.println(F("[SPI] GPIO18(SCK)/11(MOSI) initialized with dynamic MISO"));
 
     // 初始化三個 RC522。
-    // PCD_ReadRegister(VersionReg) 可快速判斷 SPI 通訊是否正常：
-    //   常見正常值：0x91、0x92
-    //   常見錯誤值：0x00、0xFF，通常表示接線、電源或 CS 問題。
     for (int i = 0; i < SLOT_COUNT; i++) {
+        selectReaderMiso(i);
         READERS[i]->PCD_Init();
         byte ver = READERS[i]->PCD_ReadRegister(MFRC522::VersionReg);
         Serial.printf("[RC522 %s] Version: 0x%02X", SLOT_NAMES[i], ver);
@@ -468,6 +495,7 @@ void showWifiReadyBlue() {
  *   PICC_WakeupA() 使用 WUPA，能叫醒 IDLE/HALT 狀態的卡，適合固定放在櫃位上的標籤。
  */
 String pollSlot(int idx) {
+    selectReaderMiso(idx);
     MFRC522& reader = *READERS[idx];
 
     byte atqa[2];
@@ -711,6 +739,7 @@ void runScanMode() {
     lastMs = millis();
 
     for (int i = 0; i < SLOT_COUNT; i++) {
+        selectReaderMiso(i);
         MFRC522& r = *READERS[i];
         byte atqa[2];
         byte sz = 2;

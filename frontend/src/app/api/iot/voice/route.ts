@@ -159,24 +159,48 @@ async function publishLedCommands(
 
 /** TTS: Edge TTS 主要方案 → OpenAI fallback */
 async function generateTtsBase64(text: string): Promise<string> {
+  // 1. 嘗試 Edge TTS (語音最自然)
   try {
     const buf = await tts(text, { voice: "zh-TW-HsiaoChenNeural" });
     return buf.toString("base64");
   } catch (e) {
-    console.warn("Edge TTS failed, trying OpenAI TTS:", e);
+    console.warn("Edge TTS failed, trying Google TTS:", e);
   }
 
-  if (process.env.OPENAI_API_KEY) {
-    const res = await fetch("https://api.openai.com/v1/audio/speech", {
-      method: "POST",
+  // 2. 嘗試 Google Translate TTS (免費、免 Key、Vercel 雲端 IP 友善)
+  try {
+    const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-TW&client=tw-ob`;
+    const res = await fetch(googleTtsUrl, {
       headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36"
+      }
     });
     if (res.ok) {
-      return Buffer.from(await res.arrayBuffer()).toString("base64");
+      const arrayBuffer = await res.arrayBuffer();
+      return Buffer.from(arrayBuffer).toString("base64");
+    } else {
+      console.warn("Google TTS failed with status:", res.status);
+    }
+  } catch (e) {
+    console.warn("Google TTS failed:", e);
+  }
+
+  // 3. 嘗試 OpenAI TTS (需設定 Key)
+  if (process.env.OPENAI_API_KEY) {
+    try {
+      const res = await fetch("https://api.openai.com/v1/audio/speech", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
+      });
+      if (res.ok) {
+        return Buffer.from(await res.arrayBuffer()).toString("base64");
+      }
+    } catch (e) {
+      console.warn("OpenAI TTS failed:", e);
     }
   }
 

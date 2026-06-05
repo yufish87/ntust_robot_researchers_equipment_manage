@@ -72,15 +72,22 @@ const char* DEVICE_ID     = "ESP32_C1_L1";
 // 4. 腳位定義
 // ============================================================================
 #define SPI_SCK_PIN     18
-#define SPI_MISO_PIN    13
 #define SPI_MOSI_PIN    11
-#define RC522_RST_PIN   12
+
+#define RC522_A_RST_PIN 12  // 左側 GPIO12
+#define RC522_B_RST_PIN  7  // 左側 GPIO7 (獨立 RST 避免干涉)
+#define RC522_C_RST_PIN 15  // 左側 GPIO15 (獨立 RST 避免干涉)
 
 #define RC522_A_CS_PIN   5
-#define RC522_B_CS_PIN  16
-#define RC522_C_CS_PIN  17
+#define RC522_B_CS_PIN   4  // 改用左側 GPIO4 (避開 JTAG/PSRAM/Strap 衝突)
+#define RC522_C_CS_PIN   6  // 改用左側 GPIO6 (避開 JTAG/PSRAM/Strap 衝突)
 
-// S3 無 GPIO25/27，改用 GPIO9/GPIO10
+// 三個 RC522 獨立使用 MISO 腳位，解決 cheap 模組 MISO 不釋放的硬體 bug (Tri-state issue)
+#define RC522_A_MISO_PIN 13  // 左側 GPIO13
+#define RC522_B_MISO_PIN 14  // 左側下方 GPIO14
+#define RC522_C_MISO_PIN  8  // 左側中間 GPIO8
+
+// S3 無 GPIO25/27，改用 GPIO9/GPIO10/GPIO21
 #define LED_A_PIN       21
 #define LED_B_PIN        9
 #define LED_C_PIN       10
@@ -127,9 +134,9 @@ const int UID_TABLE_SIZE = sizeof(UID_TABLE) / sizeof(UidEntry);
 // ============================================================================
 #define SLOT_COUNT 3
 
-MFRC522 rfidA(RC522_A_CS_PIN, RC522_RST_PIN);
-MFRC522 rfidB(RC522_B_CS_PIN, RC522_RST_PIN);
-MFRC522 rfidC(RC522_C_CS_PIN, RC522_RST_PIN);
+MFRC522 rfidA(RC522_A_CS_PIN, RC522_A_RST_PIN);
+MFRC522 rfidB(RC522_B_CS_PIN, RC522_B_RST_PIN);
+MFRC522 rfidC(RC522_C_CS_PIN, RC522_C_RST_PIN);
 
 MFRC522*    READERS[SLOT_COUNT]    = {&rfidA, &rfidB, &rfidC};
 const char* SLOT_NAMES[SLOT_COUNT] = {"A", "B", "C"};
@@ -179,6 +186,22 @@ void   runScanMode();
 void   printStateTable();
 
 // ============================================================================
+// 9.5. SPI MISO 動態切換
+// ============================================================================
+void selectReaderMiso(int idx) {
+    SPI.end();
+    delayMicroseconds(10);
+    if (idx == 0) {
+        SPI.begin(SPI_SCK_PIN, RC522_A_MISO_PIN, SPI_MOSI_PIN, -1);
+    } else if (idx == 1) {
+        SPI.begin(SPI_SCK_PIN, RC522_B_MISO_PIN, SPI_MOSI_PIN, -1);
+    } else if (idx == 2) {
+        SPI.begin(SPI_SCK_PIN, RC522_C_MISO_PIN, SPI_MOSI_PIN, -1);
+    }
+    delayMicroseconds(50); // 給予矩陣切換穩定的極短時間
+}
+
+// ============================================================================
 // 10. setup()
 // ============================================================================
 void setup() {
@@ -194,10 +217,20 @@ void setup() {
     pinMode(RC522_B_CS_PIN, OUTPUT); digitalWrite(RC522_B_CS_PIN, HIGH);
     pinMode(RC522_C_CS_PIN, OUTPUT); digitalWrite(RC522_C_CS_PIN, HIGH);
 
-    SPI.begin(SPI_SCK_PIN, SPI_MISO_PIN, SPI_MOSI_PIN, -1);
-    Serial.println(F("[SPI] GPIO18(SCK)/13(MISO)/11(MOSI) initialized"));
+    // 獨立 RST 腳位預設拉低，避免未啟動模組對匯流排造成電氣干擾
+    pinMode(RC522_A_RST_PIN, OUTPUT); digitalWrite(RC522_A_RST_PIN, LOW);
+    pinMode(RC522_B_RST_PIN, OUTPUT); digitalWrite(RC522_B_RST_PIN, LOW);
+    pinMode(RC522_C_RST_PIN, OUTPUT); digitalWrite(RC522_C_RST_PIN, LOW);
+
+    // 預初始化所有 MISO 腳位為帶上拉輸入，避免浮空
+    pinMode(RC522_A_MISO_PIN, INPUT_PULLUP);
+    pinMode(RC522_B_MISO_PIN, INPUT_PULLUP);
+    pinMode(RC522_C_MISO_PIN, INPUT_PULLUP);
+
+    Serial.println(F("[SPI] GPIO18(SCK)/11(MOSI) initialized with dynamic MISO"));
 
     for (int i = 0; i < SLOT_COUNT; i++) {
+        selectReaderMiso(i);
         READERS[i]->PCD_Init();
         byte ver = READERS[i]->PCD_ReadRegister(MFRC522::VersionReg);
         Serial.printf("[RC522 %s] Version: 0x%02X", SLOT_NAMES[i], ver);
@@ -458,6 +491,7 @@ int pinToStripIndex(int gpioPin) {
 // 16. RFID 輪詢
 // ============================================================================
 String pollSlot(int idx) {
+    selectReaderMiso(idx);
     MFRC522& reader = *READERS[idx];
 
     byte atqa[2];
@@ -638,6 +672,7 @@ void runScanMode() {
     lastMs = millis();
 
     for (int i = 0; i < SLOT_COUNT; i++) {
+        selectReaderMiso(i);
         MFRC522& r = *READERS[i];
         byte atqa[2];
         byte sz = 2;
