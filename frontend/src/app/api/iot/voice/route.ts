@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { tts } from "edge-tts";
 import mqtt from "mqtt";
 
@@ -10,7 +9,6 @@ const GAS_API_URL = process.env.NEXT_PUBLIC_GAS_API_URL;
 const IOT_BEARER_TOKEN = process.env.IOT_BEARER_TOKEN;
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "" });
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 
 // 社辦現有器材列表，供 Gemini 做名稱校正與模糊對應
 const EQUIPMENT_LIST = [
@@ -192,8 +190,6 @@ async function generateTtsBase64(text: string): Promise<string> {
  * - 對照器材列表校正名稱（修正語音辨識誤字 / 模糊詞對應）
  */
 async function detectIntent(text: string): Promise<NluResult> {
-  const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
   const prompt = `你是社辦器材管理系統的語音助理。
 
 以下是社辦現有的器材列表：
@@ -213,12 +209,20 @@ ${EQUIPMENT_LIST}
 
 使用者說：${text}`;
 
-  const result = await model.generateContent(prompt);
-  const raw = result.response.text().trim();
-  const cleaned = raw.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "");
-
   try {
-    const parsed = JSON.parse(cleaned) as { intent: string; keywords: string[] };
+    const chatCompletion = await groq.chat.completions.create({
+      messages: [
+        {
+          role: "user",
+          content: prompt,
+        },
+      ],
+      model: "llama-3.1-8b-instant",
+      temperature: 0.1,
+      response_format: { type: "json_object" },
+    });
+    const raw = chatCompletion.choices[0]?.message?.content?.trim() || "";
+    const parsed = JSON.parse(raw) as { intent: string; keywords: string[] };
     if (
       parsed.intent === "search" &&
       Array.isArray(parsed.keywords) &&
@@ -227,8 +231,8 @@ ${EQUIPMENT_LIST}
       return { intent: "search", keywords: parsed.keywords };
     }
     return { intent: "other", keywords: [] };
-  } catch {
-    console.warn("[Voice] Gemini NLU parse failed, raw:", raw);
+  } catch (err) {
+    console.warn("[Voice] Groq NLU parse failed:", err);
     return { intent: "other", keywords: [] };
   }
 }
@@ -257,7 +261,7 @@ function buildTtsText(searches: KeywordSearchResult[]): string {
   for (const { keyword, results } of found) {
     if (results.length === 1) {
       parts.push(
-        `${keyword}在${results[0].category}類別，箱子在${results[0].description}`,
+        `${keyword}在貼著【${results[0].category}】的箱子裡，位置在${results[0].description}`,
       );
     } else {
       const locs = results
@@ -276,6 +280,31 @@ function buildTtsText(searches: KeywordSearchResult[]): string {
   }
 
   return text;
+}
+
+function buildReplyText(searches: KeywordSearchResult[]): string {
+  const found = searches.filter((s) => s.results.length > 0);
+  const notFound = searches.filter((s) => s.results.length === 0);
+
+  if (found.length === 0) {
+    const names = notFound.map((s) => s.keyword).join("與");
+    return `抱歉，目前在庫中找不到「${names}」相關的器材箱，可能已借出或尚未入庫。`;
+  }
+
+  const lines: string[] = [];
+  for (const { keyword, results } of found) {
+    const boxes = results
+      .map((r) => `【${r.category}】在 ${r.description}（${r.boxId}）`)
+      .join("；");
+    lines.push(`「${keyword}」→ ${boxes}`);
+  }
+
+  if (notFound.length > 0) {
+    const nfNames = notFound.map((s) => s.keyword).join("、");
+    lines.push(`「${nfNames}」目前庫中找不到，請確認是否已借出。`);
+  }
+
+  return lines.join("\n");
 }
 
 // ────────────────────────────────────────────────
@@ -380,7 +409,7 @@ export async function POST(req: NextRequest) {
       text: userText,
       keywords,
       searches: searchResults,
-      replyText: ttsText,
+      replyText: buildReplyText(searchResults),
       audioBase64,
       audioFormat: "mp3",
     });

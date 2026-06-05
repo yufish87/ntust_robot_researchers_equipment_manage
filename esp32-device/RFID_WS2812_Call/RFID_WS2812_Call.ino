@@ -395,16 +395,24 @@ void mqttCallback(char* topic, byte* payload, unsigned int length) {
 
     JsonArray pins     = doc["pins"].as<JsonArray>();
     int       duration = doc["duration"] | LED_VOICE_DURATION_MS;
-    unsigned long endTime = millis() + duration;
+    unsigned long endTime = millis() + (unsigned long)duration;
 
     for (JsonVariant pinVal : pins) {
         int gpioPin = pinVal.as<int>();
         int idx     = pinToStripIndex(gpioPin);
         if (idx >= 0) {
-            voiceSearchActive[idx]  = true;
-            voiceSearchEndTime[idx] = endTime;
-            Serial.printf("[MQTT] Strip %s (GPIO%d) voice LED on for %dms\n",
-                          SLOT_NAMES[idx], gpioPin, duration);
+            if (duration == 0) {
+                // 立即熄燈（確認領取 / 逾期）
+                voiceSearchActive[idx] = false;
+                voiceSearchEndTime[idx] = 0;
+                Serial.printf("[MQTT] Strip %s (GPIO%d) voice LED OFF (duration=0)\n",
+                              SLOT_NAMES[idx], gpioPin);
+            } else {
+                voiceSearchActive[idx]  = true;
+                voiceSearchEndTime[idx] = endTime;
+                Serial.printf("[MQTT] Strip %s (GPIO%d) voice LED on for %dms\n",
+                              SLOT_NAMES[idx], gpioPin, duration);
+            }
         } else {
             Serial.printf("[MQTT] Unknown GPIO pin in command: %d\n", gpioPin);
         }
