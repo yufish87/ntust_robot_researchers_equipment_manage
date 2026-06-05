@@ -185,25 +185,6 @@ async function generateTtsBase64(text: string): Promise<string> {
     console.warn("Google TTS failed:", e);
   }
 
-  // 3. 嘗試 OpenAI TTS (需設定 Key)
-  if (process.env.OPENAI_API_KEY) {
-    try {
-      const res = await fetch("https://api.openai.com/v1/audio/speech", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
-      });
-      if (res.ok) {
-        return Buffer.from(await res.arrayBuffer()).toString("base64");
-      }
-    } catch (e) {
-      console.warn("OpenAI TTS failed:", e);
-    }
-  }
-
   throw new Error("All TTS engines failed");
 }
 
@@ -231,7 +212,7 @@ ${EQUIPMENT_LIST}
 搜尋多樣器材：{"intent":"search","keywords":["器材名稱A","器材名稱B"]}
 非尋物意圖：{"intent":"other","keywords":[]}
 
-使用者說：${text}`;
+使用者說：${text}，如果是簡體中文，將文字轉成繁體中文後再處理`;
 
   try {
     const chatCompletion = await groq.chat.completions.create({
@@ -391,16 +372,21 @@ export async function POST(req: NextRequest) {
     const { intent, keywords } = await detectIntent(userText);
     console.log("[Voice] Intent:", intent, "Keywords:", keywords);
 
+    const host = req.headers.get("host") || "localhost:3000";
+    const protocol = req.headers.get("x-forwarded-proto") || "http";
+
     // 非尋物意圖
     if (intent === "other" || keywords.length === 0) {
       const replyText =
         "我只能協助您尋找社辦的器材喔，請說出您想找的器材名稱。";
       const audioBase64 = await generateTtsBase64(replyText);
+      const audioUrl = `${protocol}://${host}/api/iot/voice/tts?text=${encodeURIComponent(replyText)}`;
       return NextResponse.json({
         success: true,
         intent: "other",
         text: userText,
         replyText,
+        audioUrl,
         audioBase64,
         audioFormat: "mp3",
       });
@@ -420,6 +406,7 @@ export async function POST(req: NextRequest) {
 
     // ── Step 6: TTS 生成 ──
     const audioBase64 = await generateTtsBase64(ttsText);
+    const audioUrl = `${protocol}://${host}/api/iot/voice/tts?text=${encodeURIComponent(ttsText)}`;
 
     // ── Step 6.5: 發布 MQTT 亮燈命令（non-blocking，失敗不影響回應）──
     publishLedCommands(searchResults).catch((e) =>
@@ -434,12 +421,103 @@ export async function POST(req: NextRequest) {
       keywords,
       searches: searchResults,
       replyText: buildReplyText(searchResults),
+      audioUrl,
       audioBase64,
       audioFormat: "mp3",
     });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : "Unknown error";
     console.error("[Voice] Error:", message);
+    return NextResponse.json(
+      { success: false, error: message },
+      { status: 500 },
+    );
+  }
+}
+
+/**
+ * GET /api/iot/voice/tts
+ *
+ * 參數: ?text=xxx
+ * 回傳: audio/mpeg 串流或音訊二進位資料，供 NodeMCU-32S 串流播放
+ */
+export async function GET(req: NextRequest) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const text = searchParams.get("text");
+    if (!text) {
+      return NextResponse.json(
+        { success: false, error: "Missing text parameter" },
+        { status: 400 },
+      );
+    }
+
+    // 1. 嘗試 Edge TTS (語音最自然)
+    try {
+      const buf = await tts(text, { voice: "zh-TW-HsiaoChenNeural" });
+      const uint8Array = new Uint8Array(buf);
+      return new NextResponse(uint8Array, {
+        headers: {
+          "Content-Type": "audio/mpeg",
+          "Content-Length": uint8Array.byteLength.toString(),
+        },
+      });
+    } catch (e) {
+      console.warn("[Voice GET] Edge TTS failed, trying Google TTS:", e);
+    }
+
+    // 2. 嘗試 Google Translate TTS (免費、免 Key、雲端友好)
+    try {
+      const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=zh-TW&client=tw-ob`;
+      const res = await fetch(googleTtsUrl, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.0.0 Safari/537.36",
+        },
+      });
+      if (res.ok) {
+        const arrayBuffer = await res.arrayBuffer();
+        return new NextResponse(arrayBuffer, {
+          headers: {
+            "Content-Type": "audio/mpeg",
+            "Content-Length": arrayBuffer.byteLength.toString(),
+          },
+        });
+      }
+    } catch (e) {
+      console.warn("[Voice GET] Google TTS failed:", e);
+    }
+
+    // 3. 嘗試 OpenAI TTS (需要 Key)
+    if (process.env.OPENAI_API_KEY) {
+      try {
+        const res = await fetch("https://api.openai.com/v1/audio/speech", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ model: "tts-1", voice: "alloy", input: text }),
+        });
+        if (res.ok) {
+          const arrayBuffer = await res.arrayBuffer();
+          return new NextResponse(arrayBuffer, {
+            headers: {
+              "Content-Type": "audio/mpeg",
+              "Content-Length": arrayBuffer.byteLength.toString(),
+            },
+          });
+        }
+      } catch (e) {
+        console.warn("[Voice GET] OpenAI TTS failed:", e);
+      }
+    }
+
+    return NextResponse.json(
+      { success: false, error: "All TTS engines failed" },
+      { status: 500 },
+    );
+  } catch (error: unknown) {
+    const message = error instanceof Error ? error.message : "Unknown error";
     return NextResponse.json(
       { success: false, error: message },
       { status: 500 },
