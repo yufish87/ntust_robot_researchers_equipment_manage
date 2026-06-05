@@ -35,8 +35,8 @@ int lastPageIndex = -1; // Keep track of last page to avoid unnecessary screen f
 #define BUTTON_PIN 16
 
 // WiFi Credentials
-const char* ssid = "yufish";
-const char* password = "yufish666";
+const char* ssid = "[NTUST_IoT]";
+const char* password = "[PASSWORD]";
 
 // BFF API Endpoints
 const char* bffScanUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/auth/scan";

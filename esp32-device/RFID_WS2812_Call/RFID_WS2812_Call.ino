@@ -47,8 +47,8 @@
 // ============================================================================
 // 2. Wi-Fi / API / 裝置識別設定
 // ============================================================================
-const char* WIFI_SSID     = "DaShaBiNoIphone";
-const char* WIFI_PASSWORD = "Yang0608";
+const char* WIFI_SSID     = "[NTUST_IoT]";
+const char* WIFI_PASSWORD = "[PASSWORD]";
 
 const char* API_ENDPOINT  = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/inventory/update";
 const char* API_TOKEN     = "RRC_IoT_Secure_Token_2026";

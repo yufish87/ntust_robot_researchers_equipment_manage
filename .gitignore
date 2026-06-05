@@ -9,5 +9,4 @@ gas-backend-public/
 .vscode/
 node_modules/
 Example/
-esp32-device\QRInteract_Chinese\U8g2_for_TFT_eSPI
-docs/
+docs
