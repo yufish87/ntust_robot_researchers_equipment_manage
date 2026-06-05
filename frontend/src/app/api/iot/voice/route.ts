@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
 import { tts } from "edge-tts";
-import mqtt from "mqtt";
 
 export const dynamic = "force-dynamic";
 
@@ -91,70 +90,42 @@ interface KeywordSearchResult {
  * 依 deviceId 分組，每台 ESP32 收一條訊息
  * 失敗時只 warn，不中斷語音回應
  */
+/**
+ * 語音尋物亮燈：呼叫 /api/iot/led 內部 API，
+ * 傳入 keywords 讓它自己查 GAS 找 deviceId / ledPin
+ */
 async function publishLedCommands(
   searches: KeywordSearchResult[],
+  req: NextRequest,
 ): Promise<void> {
-  const brokerUrl = process.env.MQTT_BROKER_URL;
-  const username = process.env.MQTT_USERNAME;
-  const password = process.env.MQTT_PASSWORD;
-  const port = parseInt(process.env.MQTT_PORT || "8883", 10);
+  // 從搜尋結果收集有名稱的 keywords
+  const items = searches
+    .filter((s) => s.results.length > 0)
+    .map((s) => ({ name: s.keyword }));
 
-  if (!brokerUrl || !username || !password) {
-    console.warn("[MQTT] Missing broker config, skipping LED publish");
+  if (items.length === 0) {
+    console.warn("[MQTT] No found results, skipping LED publish");
     return;
   }
 
-  // 收集 deviceId → LED pins（去重）
-  const devicePins: Record<string, Set<number>> = {};
-  for (const { results } of searches) {
-    for (const r of results) {
-      if (!r.deviceId || !r.ledPin) continue;
-      const pin = parseInt(r.ledPin, 10);
-      if (isNaN(pin)) continue;
-      if (!devicePins[r.deviceId]) devicePins[r.deviceId] = new Set();
-      devicePins[r.deviceId].add(pin);
-    }
+  try {
+    const host = req.headers.get("host") || "localhost:3000";
+    const protocol = req.headers.get("x-forwarded-proto") || "http";
+    const ledUrl = `${protocol}://${host}/api/iot/led`;
+
+    console.log("[MQTT] Calling LED API:", ledUrl, "items:", items);
+
+    const res = await fetch(ledUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items, duration: 10000, action: "on" }),
+    });
+
+    const data = await res.json();
+    console.log("[MQTT] LED API response:", data);
+  } catch (err) {
+    console.error("[MQTT] LED API call failed:", err);
   }
-
-  if (Object.keys(devicePins).length === 0) return;
-
-  return new Promise<void>((resolve) => {
-    const client = mqtt.connect(`mqtts://${brokerUrl}`, {
-      port,
-      username,
-      password,
-      clientId: `rrc-server-${Date.now()}`,
-      connectTimeout: 5000,
-    });
-
-    client.on("connect", () => {
-      const publishes = Object.entries(devicePins).map(
-        ([deviceId, pins]) =>
-          new Promise<void>((res, rej) => {
-            const topic = `rrc/led/${deviceId}`;
-            const msg = JSON.stringify({ pins: [...pins], duration: 10000 });
-            client.publish(topic, msg, { qos: 1 }, (err) =>
-              err ? rej(err) : res(),
-            );
-          }),
-      );
-
-      Promise.allSettled(publishes).then((results) => {
-        results.forEach((r) => {
-          if (r.status === "rejected")
-            console.error("[MQTT] Publish error:", r.reason);
-        });
-        client.end();
-        resolve();
-      });
-    });
-
-    client.on("error", (err) => {
-      console.error("[MQTT] Connection error:", err.message);
-      client.end();
-      resolve(); // 不因 MQTT 失敗而中斷語音回應
-    });
-  });
 }
 
 /**
@@ -407,7 +378,7 @@ export async function POST(req: NextRequest) {
     const audioUrl = `${protocol}://${host}/api/iot/voice/tts?text=${encodeURIComponent(ttsText)}`;
 
     // ── Step 6.5: 發布 MQTT 亮燈命令（non-blocking，失敗不影響回應）──
-    publishLedCommands(searchResults).catch((e) =>
+    publishLedCommands(searchResults, req).catch((e) =>
       console.error("[MQTT] Unexpected error:", e),
     );
 
