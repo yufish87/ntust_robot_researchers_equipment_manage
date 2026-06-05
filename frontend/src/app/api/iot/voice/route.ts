@@ -175,9 +175,9 @@ async function detectIntent(text: string): Promise<NluResult> {
 - 若無法對應到列表中任何器材，回傳空陣列
 - 所有輸出的器材名稱必須使用繁體中文
 
-只輸出 JSON 物件，格式如下（不要 markdown 圍欄）：
+只輸出 JSON 物件，範例格式如下（不要 markdown 圍欄）：
 {
-  "keywords": ["器材A", "器材B", ...]
+  "keywords": ["Arduino Uno (附線)", "超音波傳感器"]
 }
 如果找不到對應器材，回傳：
 {
