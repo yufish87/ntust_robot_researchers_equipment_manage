@@ -118,7 +118,7 @@ export default function EquipmentSearchWidget() {
             bottom: "164px", // 定位在觸發按鈕上方
             right: "24px",
             zIndex: 9998,
-            width: "500px",
+            width: "395px",
             maxHeight: "480px",
             borderRadius: "16px",
             background: "#34313d", // 網站深色底
