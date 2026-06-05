@@ -7,7 +7,6 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import Groq from "groq-sdk";
-import mqtt from "mqtt";
 
 const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || "" });
 
@@ -87,9 +86,14 @@ async function extractKeywords(query: string): Promise<string[]> {
 使用者輸入：「${query}」
 
 請從上方器材庫存清單中，找出使用者想尋找的器材名稱（可以多個）。
-請只輸出 JSON 物件，格式如下：
+規則：
+- 若使用者說的名稱與列表有些許差異（語音辨識誤字、別名、簡稱），請自動對應到列表中最接近的名稱
+- 若無法對應到列表中任何器材，回傳空陣列
+- 所有輸出的器材名稱必須使用繁體中文
+
+請只輸出 JSON 物件，格式如下（不要 markdown 圍欄）：
 {
-  "keywords": ["Arduino Uno", "超音波傳感器"]
+  "keywords": ["Arduino Uno (附線)", "超音波傳感器"]
 }
 如果找不到對應器材，回傳：
 {
@@ -140,9 +144,9 @@ function buildReplyText(searches: KeywordSearchResult[]): string {
   const lines: string[] = [];
   for (const { keyword, results } of found) {
     const boxes = results
-      .map((r) => `在貼著「${r.category}」的箱子裡，位置在 ${r.description}（ID: ${r.boxId}）`)
+      .map((r) => `【${r.category}】在 ${r.description}（${r.boxId}）`)
       .join("；");
-    lines.push(`「${keyword}」 ${boxes}`);
+    lines.push(`「${keyword}」→ ${boxes}`);
   }
 
   if (notFound.length > 0) {
@@ -153,59 +157,35 @@ function buildReplyText(searches: KeywordSearchResult[]): string {
   return lines.join("\n");
 }
 
-// ── MQTT 亮燈（複用 voice route 的邏輯）──────────────────────────────────
-async function publishLedCommands(searches: KeywordSearchResult[]): Promise<void> {
-  const brokerUrl = process.env.MQTT_BROKER_URL;
-  const username = process.env.MQTT_USERNAME;
-  const password = process.env.MQTT_PASSWORD;
-  const port = parseInt(process.env.MQTT_PORT || "8883", 10);
+/**
+ * 語音尋物亮燈：呼叫 /api/iot/led 內部 API，
+ * 傳入 keywords 讓它自己查 GAS 找 deviceId / ledPin
+ */
+async function publishLedCommands(
+  searches: KeywordSearchResult[],
+  req: NextRequest,
+): Promise<void> {
+  const items = searches
+    .filter((s) => s.results.length > 0)
+    .map((s) => ({ name: s.keyword }));
 
-  if (!brokerUrl || !username || !password) return;
+  if (items.length === 0) return;
 
-  const devicePins: Record<string, Set<number>> = {};
-  for (const { results } of searches) {
-    for (const r of results) {
-      if (!r.deviceId || !r.ledPin) continue;
-      const pin = parseInt(r.ledPin, 10);
-      if (isNaN(pin)) continue;
-      if (!devicePins[r.deviceId]) devicePins[r.deviceId] = new Set();
-      devicePins[r.deviceId].add(pin);
-    }
+  try {
+    const host = req.headers.get("host") || "localhost:3000";
+    const protocol = req.headers.get("x-forwarded-proto") || "http";
+    const ledUrl = `${protocol}://${host}/api/iot/led`;
+
+    const res = await fetch(ledUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ items, duration: 10000, action: "on" }),
+    });
+    const data = await res.json();
+    console.log("[Text Search] LED API response:", data);
+  } catch (err) {
+    console.error("[Text Search] LED API call failed:", err);
   }
-
-  if (Object.keys(devicePins).length === 0) return;
-
-  return new Promise<void>((resolve) => {
-    const client = mqtt.connect(`mqtts://${brokerUrl}`, {
-      port,
-      username,
-      password,
-      clientId: `rrc-text-${Date.now()}`,
-      connectTimeout: 5000,
-    });
-
-    client.on("connect", () => {
-      const publishes = Object.entries(devicePins).map(
-        ([deviceId, pins]) =>
-          new Promise<void>((res, rej) => {
-            const msg = JSON.stringify({ pins: [...pins], duration: 10000 });
-            client.publish(`rrc/led/${deviceId}`, msg, { qos: 1 }, (err) =>
-              err ? rej(err) : res(),
-            );
-          }),
-      );
-
-      Promise.allSettled(publishes).then(() => {
-        client.end();
-        resolve();
-      });
-    });
-
-    client.on("error", () => {
-      client.end();
-      resolve();
-    });
-  });
 }
 
 // ── Route Handler ─────────────────────────────────────────────────────────
@@ -242,7 +222,7 @@ export async function POST(req: NextRequest) {
     const replyText = buildReplyText(searchResults);
 
     // Step 4: MQTT 亮燈（non-blocking）
-    publishLedCommands(searchResults).catch((e) =>
+    publishLedCommands(searchResults, req).catch((e) =>
       console.error("[Text Search] MQTT error:", e),
     );
 

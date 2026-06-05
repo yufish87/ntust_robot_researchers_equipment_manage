@@ -177,7 +177,7 @@ async function detectIntent(text: string): Promise<NluResult> {
 
 只輸出 JSON 物件，格式如下（不要 markdown 圍欄）：
 {
-  "keywords": ["Arduino Uno (附線)", "超音波傳感器"]
+  "keywords": ["器材A", "器材B", ...]
 }
 如果找不到對應器材，回傳：
 {
