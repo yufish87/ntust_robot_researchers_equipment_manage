@@ -221,8 +221,7 @@ function buildTtsText(searches: KeywordSearchResult[]): string {
   const notFound = searches.filter((s) => s.results.length === 0);
 
   if (found.length === 0) {
-    const names = notFound.map((s) => s.keyword).join("與");
-    return `抱歉，找不到${names}相關的器材，請確認器材名稱。`;
+    return `找不到器材。`;
   }
 
   const parts: string[] = [];
@@ -241,12 +240,7 @@ function buildTtsText(searches: KeywordSearchResult[]): string {
     }
   }
 
-  let text = `找到了。${parts.join("；")}，已為您點亮指示燈。`;
-
-  if (notFound.length > 0) {
-    const names = notFound.map((s) => s.keyword).join("與");
-    text += `另外，找不到${names}，請確認名稱。`;
-  }
+  let text = `找到了。已亮燈。`;
 
   return text;
 }
@@ -256,8 +250,7 @@ function buildReplyText(searches: KeywordSearchResult[]): string {
   const notFound = searches.filter((s) => s.results.length === 0);
 
   if (found.length === 0) {
-    const names = notFound.map((s) => s.keyword).join("與");
-    return `抱歉，目前在庫中找不到「${names}」相關的器材箱，可能已借出或尚未入庫。`;
+    return `找不到器材。`;
   }
 
   const lines: string[] = [];
@@ -266,11 +259,6 @@ function buildReplyText(searches: KeywordSearchResult[]): string {
       .map((r) => `【${r.category}】在 ${r.description}（${r.boxId}）`)
       .join("；");
     lines.push(`「${keyword}」→ ${boxes}`);
-  }
-
-  if (notFound.length > 0) {
-    const nfNames = notFound.map((s) => s.keyword).join("、");
-    lines.push(`「${nfNames}」目前庫中找不到，請確認是否已借出。`);
   }
 
   return lines.join("\n");
@@ -342,7 +330,7 @@ export async function POST(req: NextRequest) {
     // 非尋物意圖
     if (intent === "other" || keywords.length === 0) {
       const replyText =
-        "我只能協助您尋找社辦的器材喔，請說出您想找的器材名稱。";
+        "請再說一次";
       const audioBase64 = await generateTtsBase64(replyText);
       const audioUrl = `${protocol}://${host}/api/iot/voice/tts?text=${encodeURIComponent(replyText)}`;
       return NextResponse.json({
@@ -463,20 +451,6 @@ export async function GET(req: NextRequest) {
           { status: 502 },
         );
       }
-    }
-
-    // ── MP3 格式: Edge TTS → Google TTS fallback ──
-    try {
-      const buf = await tts(text, { voice: "zh-TW-HsiaoChenNeural" });
-      const uint8Array = new Uint8Array(buf);
-      return new NextResponse(uint8Array, {
-        headers: {
-          "Content-Type": "audio/mpeg",
-          "Content-Length": uint8Array.byteLength.toString(),
-        },
-      });
-    } catch (e) {
-      console.warn("[Voice GET] Edge TTS failed, trying Google TTS:", e);
     }
 
     try {
