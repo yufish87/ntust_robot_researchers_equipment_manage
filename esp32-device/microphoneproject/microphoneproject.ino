@@ -31,8 +31,8 @@
 // ===== 使用者設定區 =====
 // 這裡是你最常需要改的地方：Wi-Fi 名稱、密碼、Vercel API URL。
 // 程式不使用 API key，會直接把錄到的 WAV 上傳到 VOICE_API_URL。
-const char *WIFI_SSID = "DaShaBiNoIphone";
-const char *WIFI_PASSWORD = "Yang0608";
+const char *WIFI_SSID = "";
+const char *WIFI_PASSWORD = "";
 
 // 語音查詢 API：
 // ESP32 會對這個 URL 發送 HTTP POST。
@@ -50,12 +50,12 @@ const char *WIFI_PASSWORD = "Yang0608";
 //   "audioUrl": "https://.../reply.mp3",
 //   "audioFormat": "mp3"
 // }
-const char *VOICE_API_URL = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/voice";
+const char *VOICE_API_URL = "";
 
 // Vercel API Bearer Token：
 // 後端若需要驗證，HTTP header 會送出：
-// Authorization: Bearer RRC_IoT_Secure_Token_2026
-const char *API_BEARER_TOKEN = "RRC_IoT_Secure_Token_2026";
+// Authorization: Bearer 
+const char *API_BEARER_TOKEN = "";
 
 // 裝置編號：
 // 用在 HTTP header / JSON 裡，讓後端知道是哪一台 ESP32 發出的請求。
@@ -938,7 +938,7 @@ public:
   A2DPBluetoothOutput() {
     hertz = 44100;
     channels = 2;
-    SetGain(0.35f);
+    SetGain(0.8f);
   }
 
   bool SetRate(int hz) override {

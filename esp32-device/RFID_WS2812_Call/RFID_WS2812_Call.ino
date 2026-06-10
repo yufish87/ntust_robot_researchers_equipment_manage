@@ -47,26 +47,26 @@
 // ============================================================================
 // 2. Wi-Fi / API / 裝置識別設定
 // ============================================================================
-const char* WIFI_SSID     = "[NTUST_IoT]";
-const char* WIFI_PASSWORD = "[PASSWORD]";
+const char* WIFI_SSID     = "";
+const char* WIFI_PASSWORD = "";
 
-const char* API_ENDPOINT  = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/inventory/update";
-const char* API_TOKEN     = "RRC_IoT_Secure_Token_2026";
-const char* DEVICE_ID     = "ESP32_C1_L1";
+const char* API_ENDPOINT  = "";
+const char* API_TOKEN     = "";
+const char* DEVICE_ID     = "";
 
 // ============================================================================
 // 3. MQTT 設定
 // ============================================================================
 // HiveMQ Cloud 連線資訊（TLS port 8883）
-#define MQTT_BROKER   "51e7e72c197b4ba39dd0ba059a9e0b9e.s1.eu.hivemq.cloud"
+#define MQTT_BROKER   ""
 #define MQTT_PORT     8883
-#define MQTT_USERNAME "NTUST-RRC-esp32_C1_L1"
-#define MQTT_PASSWORD "NTUST-RRC-esp32_C1_L1"
-#define MQTT_CLIENT_ID "esp32-c1-l1"
+#define MQTT_USERNAME ""
+#define MQTT_PASSWORD ""
+#define MQTT_CLIENT_ID ""
 
 // ESP32 訂閱的 topic，格式為 rrc/led/{DEVICE_ID}
 // route.ts 發布的 topic 也是這個
-#define MQTT_TOPIC_LED "rrc/led/ESP32_C1_L1"
+#define MQTT_TOPIC_LED "rrc/led/" //TODO 
 
 // ============================================================================
 // 4. 腳位定義

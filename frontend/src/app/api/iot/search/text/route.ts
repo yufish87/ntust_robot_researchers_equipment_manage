@@ -217,7 +217,7 @@ export async function POST(req: NextRequest) {
     const replyText = buildReplyText(searchResults);
 
     // Step 4: MQTT 亮燈（non-blocking）
-    publishLedCommands(searchResults, req).catch((e) =>
+    await publishLedCommands(searchResults, req).catch((e) =>
       console.error("[Text Search] MQTT error:", e),
     );
 

@@ -14,9 +14,6 @@
 ntust_rrc_website_IoT/
 ├── frontend/          # Next.js 16 前端應用程式 (BFF 代理與 IoT API)
 ├── gas-backend/       # Google Apps Script 後端代碼 (由 clasp 管理)
-├── docs/
-│   ├── detail.md      # 原系統詳細設計文檔
-│   └── IoT_detail.md  # 智慧 IoT 整合與擴充實作細則文檔
 ├── README_IoT         # IoT 硬體規格與自動化節點架構書
 ├── .clasp.json        # clasp 設定檔 (GAS 後端部署用)
 ├── .gitignore
@@ -25,7 +22,6 @@ ntust_rrc_website_IoT/
 └── README.md          # 本說明文件
 ```
 
-關於 IoT 節點的完整設計細節與 API 規範，請參閱 [docs/IoT_detail.md](docs/IoT_detail.md)。
 關於前端開發說明與安裝步驟，請參閱 [frontend/README.md](frontend/README.md)。
 
 ---
@@ -35,16 +31,16 @@ ntust_rrc_website_IoT/
 本專案引進三個高度解耦的實體 ESP32 硬體節點，與社團網站進行串接：
 
 ### 1. 語音尋物與多媒體互動站 (ESP32 #1)
-*   **硬體配置：** ESP32 + INMP441 (I2S 麥克風) + MAX98357A (I2S 音訊放大器) + 小喇叭 + WS2812B LED 燈條
-*   **功能描述：** 採集使用者語音搜尋請求，經 Next.js BFF 調度 OpenAI Whisper 進行中文語音識別 (STT)，與資料庫模糊比對出位置後，使用 OpenAI TTS 合成語音引導串流回傳給硬體播放，並透過指定 GPIO 點亮對應位置的 LED 指示燈。
+*   **硬體配置：** ESP32 + INMP441 (I2S 麥克風) + 經典藍牙 A2DP 喇叭
+*   **功能描述：** 採集使用者語音搜尋請求，經 Next.js BFF 調度 Groq Whisper 進行中文語音識別 (STT) 與 Gemini NLU (Llama-3.1-8b-instant) 進行名稱校正，與資料庫比對後，呼叫 LED 控制 API 進行 MQTT 亮燈，並透過 Edge TTS / Google TTS 合成語音。硬體下載語音音檔後，會中斷 Wi-Fi 並啟動經典藍牙，透過 A2DP 協定串流至喇叭播放，避免天線與記憶體衝突。
 
 ### 2. 邊緣庫存狀態感測站 (ESP32 #2)
-*   **硬體配置：** ESP32 + RC522 (RFID 讀卡機群，共用 SPI 匯流排，CS 獨立輪詢)
-*   **功能描述：** 高頻率輪詢實體櫃位上的 RFID 卡片狀態。於邊緣端實現狀態差分比對 (State Diff) 與去抖動驗證，僅在狀態發生變動時，打 API 將新狀態同步更新至試算表資料庫中，極小化雲端請求頻率。
+*   **硬體配置：** ESP32 + 三組 MFRC522 (RFID 讀卡機，使用獨立的 MISO、CS 與 RST 腳位以避免 SPI 總線衝突) + WS2812B 指示燈條
+*   **功能描述：** 輪詢實體櫃位上的 RFID 卡片狀態。於邊緣端實現狀態差分比對與去抖動驗證，僅在狀態變動時，打 API 將新狀態同步更新至資料庫。同時支援藉由呼叫 `/api/iot/led` API 控制櫃位指示燈亮滅。
 
-### 3. 身分授權與視覺終端 (ESP32-S3 WROOM)
-*   **硬體配置：** ESP32-S3 + OV2640 鏡頭 + I2C OLED 顯示器 + 實體按鈕
-*   **功能描述：** 使用者按下按鈕後開啟鏡頭掃描系統生成的 QR Code 憑證。驗證成功後，解析並於 OLED 渲染呈現借用人姓名與器材明細。使用者按下實體按鈕確認領取後，打 API 更新借用狀態，並觸發系統信件發送。
+### 3. 身分授權與視覺終端 (ESP32 節點三 / NodeMCU-32S)
+*   **硬體配置：** ESP32 + OV2640 鏡頭 + TFT_eSPI 螢幕 (支援 U8g2 中文字型顯示) + 實體按鈕
+*   **功能描述：** 使用者按下按鈕後開啟鏡頭掃描 QR Code 憑證。驗證成功後，解析並於 TFT 螢幕渲染呈現借用人與器材明細。使用者確認領取後，呼叫 API 更新借用狀態，並聯動 `/api/iot/led` MQTT 控制儲存格指示燈，點亮引導使用者拿取。
 
 ---
 
@@ -54,14 +50,15 @@ ntust_rrc_website_IoT/
 
 ### 邊緣硬體與通訊
 *   **核心晶片：** ESP32 / ESP32-S3 WROOM
-*   **語言與環境：** C++ (Arduino IDE / PlatformIO)
-*   **通訊協定：** HTTPS Client (對外主動請求 Vercel BFF 端點)
-*   **硬體週邊：** I2S 音訊驅動、SPI 總線輪詢、I2C 顯示屏控制、OV2640 圖像識別
+*   **語言與環境：** C++ (Arduino IDE)
+*   **通訊協定：** HTTPS Client (對外主動請求 Vercel BFF 端點)、MQTT (燈光控制)
+*   **硬體週邊：** I2S 音訊錄音、SPI 獨立總線多模組輪詢、TFT 螢幕中文渲染、OV2640 圖像識別
 
 ### 前端 BFF (Vercel)
 *   **框架：** Next.js 16 (App Router) / TypeScript
-*   **AI 整合：** OpenAI Whisper (STT) + OpenAI TTS 語音合成
+*   **AI 整合：** Groq Whisper (STT) + Gemini NLU (Llama-3.1-8b-instant) + Edge TTS / Google TTS (語音合成)
 *   **安全防護：** API Header Bearer Token 驗證機制 (防篡改)
+*   **物聯網通訊：** 整合 MQTT 燈光控制 API (`/api/iot/led`)
 
 ### 後端與資料庫 (Google Apps Script)
 *   **後端服務：** Google Apps Script Web App / 統一 Controller-Service-Repository 架構
@@ -88,7 +85,7 @@ ntust_rrc_website_IoT/
 ### 前端與 BFF 執行
 1. 進入前端目錄：`cd frontend`
 2. 安裝套件：`npm install --legacy-peer-deps`
-3. 配置 `.env.local` 環境變數 (需包含 `NEXT_PUBLIC_GAS_API_URL` 與 `OPENAI_API_KEY`)
+3. 配置 `.env.local` 環境變數 (需包含 `NEXT_PUBLIC_GAS_API_URL`、`GROQ_API_KEY`、`GEMINI_API_KEY`、`MQTT_BROKER_URL`、`MQTT_USERNAME`、`MQTT_PASSWORD`、`MQTT_PORT` 等)
 4. 啟動開發伺服器：`npm run dev`
 
 ### 後端 GAS 部署

@@ -35,14 +35,14 @@ int lastPageIndex = -1; // Keep track of last page to avoid unnecessary screen f
 #define BUTTON_PIN 16
 
 // WiFi Credentials
-const char* ssid = "[NTUST_IoT]";
-const char* password = "[PASSWORD]";
+const char* ssid = "";
+const char* password = "";
 
 // BFF API Endpoints
-const char* bffScanUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/auth/scan";
-const char* bffConfirmUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/auth/confirm";
-const char* bffLedUrl = "https://ntust-robot-researchers-equipment-m.vercel.app/api/iot/led";
-const char* iotBearerToken = "RRC_IoT_Secure_Token_2026"; // Replace with actual token
+const char* bffScanUrl = "";
+const char* bffConfirmUrl = "";
+const char* bffLedUrl = "";
+const char* iotBearerToken = ""; // Replace with actual token
 
 // Display and Camera Global Instances
 TFT_eSPI tft = TFT_eSPI();
@@ -80,7 +80,7 @@ struct BorrowedItem {
 };
 
 String scannedReqId = "";
-String applicantName = ""; // 學號 (student ID)
+String applicantName = ""; // 學�?? (student ID)
 std::vector<BorrowedItem> borrowedItems;
 bool isScanning = false;
 
@@ -105,12 +105,12 @@ void drawStandbyScreen() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
   
-  drawStr("台科大機器人研究社", 20, 15, 15);
-  drawStr("系統終端機", 40, 40);
+  drawStr("??��??大�????�人???究社", 20, 15, 15);
+  drawStr("系統�?端�??", 40, 40);
   
   tft.drawFastHLine(10, 60, 140, TFT_WHITE);
   
-  drawStr("請按按鈕開始...", 25, 85);
+  drawStr("�?????????????�?...", 25, 85);
 }
 
 // Render Scanning Screen with static guide frame (Optimized for 160x128)
@@ -118,12 +118,12 @@ void drawScanningScreen() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
   
-  drawStr("正在掃描 QR 碼", 20, 10);
-  drawStr("請將 QR 碼對準中央", 8, 25);
+  drawStr("�???��????? QR �?", 20, 10);
+  drawStr("�?�? QR 碼�??�?中央", 8, 25);
   
   // 70x70 guiding box in center
   tft.drawRect(45, 42, 70, 70, TFT_WHITE);
-  drawStr("距離 15-25 公分", 25, 116);
+  drawStr("�???? 15-25 ??��??", 25, 116);
 }
 
 // Render Fetching Screen
@@ -131,8 +131,8 @@ void drawFetchingScreen() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
   
-  drawStr("讀取明細中", 40, 40);
-  drawStr("正在連線至伺服器...", 8, 70);
+  drawStr("�???????細中", 40, 40);
+  drawStr("�???��??�???�伺??????...", 8, 70);
 }
 
 // Render Transaction Confirming Screen
@@ -140,8 +140,8 @@ void drawConfirmingScreen() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
   
-  drawStr("確認借用中", 40, 40);
-  drawStr("正在更新儲物櫃狀態...", 8, 70);
+  drawStr("確�???????�中", 40, 40);
+  drawStr("�???��?��?��?��?��????????...", 8, 70);
 }
 
 // Render Success Screen
@@ -149,9 +149,9 @@ void drawSuccessScreen() {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
   
-  drawStr("借用成功", 50, 30, 15);
-  drawStr("借用申請已確認！", 20, 65);
-  drawStr("請取走櫃內器材", 26, 85);
+  drawStr("?????��?????", 50, 30, 15);
+  drawStr("?????��?��??已確�?�?", 20, 65);
+  drawStr("�????走�????��?��??", 26, 85);
 }
 
 // Render Error Screen
@@ -159,7 +159,7 @@ void drawErrorScreen(String message) {
   tft.fillScreen(TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
   
-  drawStr("發生錯誤！", 45, 20, 15);
+  drawStr("??��????�誤�?", 45, 20, 15);
   
   tft.drawFastHLine(10, 50, 140, TFT_WHITE);
   
@@ -169,7 +169,7 @@ void drawErrorScreen(String message) {
     shortMsg = message.substring(0, 24) + "..";
   }
   drawStr(shortMsg, 20, 65);
-  drawStr("3秒後返回待機...", 15, 95);
+  drawStr("3�?�?�????�?�?...", 15, 95);
 }
 
 // Measure actual pixel width using U8g2 font metrics (accurate)
@@ -201,11 +201,11 @@ void drawBorrowDetailsStatic() {
   drawStr(scannedReqId, 0, 4);
 
   // Applicant info
-  drawStr("學號: " + applicantName, 8, 24);
+  drawStr("學�??: " + applicantName, 8, 24);
   tft.drawFastHLine(8, 36, 144, TFT_WHITE);
 
   // Equipment List Header
-  drawStr("借用器材:", 8, 43);
+  drawStr("?????��?��??:", 8, 43);
 
   // Bottom separator
   tft.drawFastHLine(8, 109, 144, TFT_WHITE);
@@ -271,7 +271,7 @@ void drawCountdownArea() {
   // Clear countdown text area (y=110 to 121)
   tft.fillRect(8, 110, 144, 12, TFT_BLACK);
   tft.setTextColor(TFT_WHITE);
-  drawStr("確認剩餘時間: " + String(remainingSeconds) + "s", 8, 112);
+  drawStr("確�????��????????: " + String(remainingSeconds) + "s", 8, 112);
 
   // Clear progress bar area (y=123 to 127)
   tft.fillRect(8, 123, 144, 5, TFT_BLACK);
@@ -296,7 +296,7 @@ bool parseBffScanResponse(String jsonStr) {
     return false;
   }
   
-  applicantName = doc["data"]["applicantId"].as<String>(); // 學號
+  applicantName = doc["data"]["applicantId"].as<String>(); // 學�??
   scannedReqId = doc["data"]["reqId"].as<String>();
   
   JsonArray itemsArr = doc["data"]["itemsDetail"].as<JsonArray>();
@@ -396,9 +396,9 @@ bool sendConfirmRequest(String reqId) {
 }
 
 /**
- * 呼叫 /api/iot/led，亮燈或熄燈
- * action: "on" 或 "off"
- * durationMs: 亮燈持續時間（毫秒），熄燈傳 0
+ * ??��?? /api/iot/led�?亮�???????????
+ * action: "on" ??? "off"
+ * durationMs: 亮�?????�???????�?毫�??�?�?????????? 0
  */
 void callLedApi(const char* action, int durationMs) {
   if (WiFi.status() != WL_CONNECTED) {
@@ -406,7 +406,7 @@ void callLedApi(const char* action, int durationMs) {
     return;
   }
 
-  // 組合 items JSON 陣列（從 borrowedItems 取出 code）
+  // �???? items JSON ??????�?�? borrowedItems ?????? code�?
   String itemsJson = "[";
   for (int i = 0; i < (int)borrowedItems.size(); i++) {
     if (i > 0) itemsJson += ",";
@@ -621,7 +621,7 @@ void setup() {
   xTaskCreatePinnedToCore(onQrCodeTask, "onQrCodeTask", 20000, NULL, 4, NULL, 1);
   
   // WiFi Connection Setup
-  drawStr("正在連線至網路...", 10, 10);
+  drawStr("�???��??�???�網�?...", 10, 10);
   
   WiFi.begin(ssid, password);
   while (WiFi.status() != WL_CONNECTED) {
@@ -629,7 +629,7 @@ void setup() {
     Serial.print(".");
   }
   Serial.println("\nWiFi connected.");
-  drawStr("網路連線成功！", 10, 25);
+  drawStr("網路???�???????�?", 10, 25);
   
   delay(1000);
   drawStandbyScreen();
@@ -699,7 +699,7 @@ void loop() {
         lastPageIndex = -1; // Force drawBorrowDetailsItemsArea to run on first loop
         drawCountdownArea();
         
-        // 亮燈：依借用器材點亮對應箱子位置，持續 remainingSeconds
+        // 亮�??�?�??????��?��??�?亮�?????箱�??�?置�?????�? remainingSeconds
         callLedApi("on", remainingSeconds * 1000);
         
         playBeep(1, 150, 0);
@@ -785,9 +785,9 @@ void loop() {
         delay(300);
       }
       else if (remainingSeconds <= 0) {
-        callLedApi("off", 0); // 逾期熄燈
+        callLedApi("off", 0); // ??��????????
         currentState = STATE_ERROR;
-        drawErrorScreen("領取時間已逾期");
+        drawErrorScreen("????????????已�?��??");
         stateTimer = millis();
       }
       break;
@@ -795,7 +795,7 @@ void loop() {
       
     case STATE_CONFIRMING:
       if (sendConfirmRequest(scannedReqId)) {
-        callLedApi("off", 0); // 確認領取後熄燈
+        callLedApi("off", 0); // 確�????????�???????
         currentState = STATE_SUCCESS;
         drawSuccessScreen();
         playBeep(2, 100, 100);
